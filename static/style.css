@@ -1,0 +1,8 @@
+@font-face {
+  font-family: "Berkeley Mono Variable Regular";
+  src: url("BerkeleyMonoVariable-Regular.woff2");
+}
+
+html {
+  font-family: "Berkeley Mono Variable Regular", sans-serif;
+}
