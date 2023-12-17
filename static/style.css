@@ -12,7 +12,6 @@ html {
 }
 
 .boxed {
-  border: 0.3em solid black;
   margin: 0em 1em 1em;
   padding: 0em 1em 1em;
 }
