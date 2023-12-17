@@ -6,3 +6,13 @@
 html {
   font-family: "Berkeley Mono Variable Regular", sans-serif;
 }
+
+.profile-ascii {
+  text-align: center;
+}
+
+.boxed {
+  border: 0.3em solid black;
+  margin: 0em 1em 1em;
+  padding: 0em 1em 1em;
+}
