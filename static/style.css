@@ -5,13 +5,24 @@
 
 html {
   font-family: "Berkeley Mono Variable Regular", sans-serif;
+  background-color: rgb(31, 31, 31);
+  color: white;
 }
 
-.profile-ascii {
+body {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.centered {
   text-align: center;
 }
 
 .boxed {
   margin: 0em 1em 1em;
   padding: 0em 1em 1em;
+}
+
+a {
+  color: lightcyan;
 }
