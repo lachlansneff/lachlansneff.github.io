@@ -455,6 +455,12 @@ label.wide {
     width: 100%;
   }
 
+  .actions,
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .panel {
     padding: 1.25rem;
   }

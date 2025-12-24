@@ -1,4 +1,4 @@
-const cacheName = "book-ledger-v3";
+const cacheName = "book-ledger-v4";
 const assets = [
   "./",
   "./index.html",

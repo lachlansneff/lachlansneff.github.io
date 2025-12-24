@@ -467,10 +467,13 @@ async function setSetting(key, value) {
   });
 }
 
+async function queryCsvPermission(handle) {
+  if (!handle?.queryPermission) return "denied";
+  return handle.queryPermission({ mode: "readwrite" });
+}
+
 async function requestCsvPermission(handle) {
-  if (!handle?.queryPermission) return false;
-  const current = await handle.queryPermission({ mode: "readwrite" });
-  if (current === "granted") return true;
+  if (!handle?.requestPermission) return false;
   const next = await handle.requestPermission({ mode: "readwrite" });
   return next === "granted";
 }
@@ -530,7 +533,11 @@ async function linkCsvFile() {
   }
   csvFileHandle = handle;
   csvAutoSaveEnabled = true;
-  await setSetting("csvFileHandle", handle);
+  try {
+    await setSetting("csvFileHandle", handle);
+  } catch (error) {
+    console.warn("Failed to store CSV handle", error);
+  }
   updateCsvLinkButton();
   queueCsvAutoSave();
 }
@@ -553,9 +560,9 @@ async function initCsvAutoSave() {
       updateCsvLinkButton();
       return;
     }
-    const granted = await requestCsvPermission(storedHandle);
+    const permission = await queryCsvPermission(storedHandle);
     csvFileHandle = storedHandle;
-    csvAutoSaveEnabled = granted;
+    csvAutoSaveEnabled = permission === "granted";
     updateCsvLinkButton();
   } catch (error) {
     console.warn("Failed to restore CSV auto-save", error);
