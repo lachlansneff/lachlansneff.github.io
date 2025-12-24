@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book Ledger</title>
+    <meta name="theme-color" content="#f3efe7" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark">BL</div>
+        <div>
+          <h1>Book Ledger</h1>
+          <p>Record finished reads. Sync to a local CSV. Works offline.</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="installBtn" class="ghost" hidden>Install App</button>
+        <button id="importBtn" class="ghost">Import CSV</button>
+        <button id="exportBtn" class="ghost">Export CSV</button>
+        <input id="fileInput" type="file" accept=".csv" hidden />
+      </div>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Add a book</h2>
+        <form id="bookForm" autocomplete="off">
+          <div class="grid">
+            <label>
+              Title
+              <input id="title" name="title" required />
+            </label>
+            <label>
+              Author
+              <input id="author" name="author" />
+            </label>
+            <label>
+              ISBN / Barcode
+              <input id="isbn" name="isbn" />
+            </label>
+            <label>
+              Year
+              <input id="year" name="year" inputmode="numeric" />
+            </label>
+            <label>
+              Finished
+              <input id="finished" name="finished" type="date" />
+            </label>
+            <label class="wide">
+              Notes
+              <textarea id="notes" name="notes" rows="2"></textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary">Save</button>
+            <button type="button" id="scanBtn" class="ghost">Scan Barcode</button>
+            <button type="reset" class="ghost">Clear</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Your list</h2>
+          <div class="search" data-collapsed="true">
+            <div class="search-group">
+              <button id="searchToggle" class="ghost search-toggle" aria-label="Search">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none" />
+                  <line x1="16.65" y1="16.65" x2="21" y2="21" stroke="currentColor" stroke-width="2" />
+                </svg>
+              </button>
+              <input id="search" class="search-input" placeholder="Search title or author" />
+            </div>
+            <select id="sort">
+              <option value="finished-desc">Newest first</option>
+              <option value="finished-asc">Oldest first</option>
+              <option value="title-asc">Title A-Z</option>
+              <option value="title-desc">Title Z-A</option>
+            </select>
+          </div>
+        </div>
+        <div id="bookList" class="list"></div>
+        <p id="emptyState" class="empty">No books yet. Add one above.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Local-first. Your data stays on this device unless you export it.</span>
+      <span>CSV columns: title, author, isbn, year, finished, notes.</span>
+    </footer>
+
+    <dialog id="scannerModal" class="scanner-modal">
+      <div class="scanner-card">
+        <div class="scanner-header">
+          <div>
+            <h2>Scan a barcode</h2>
+            <p>Align the ISBN inside the frame.</p>
+          </div>
+          <button id="closeScanner" class="ghost">Close</button>
+        </div>
+        <div class="scanner-frame">
+          <video id="scannerVideo" playsinline></video>
+          <div class="scanner-reticle"></div>
+        </div>
+        <p id="scannerStatus" class="scanner-status">Starting camera...</p>
+      </div>
+    </dialog>
+
+    <script src="vendor/zxing.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

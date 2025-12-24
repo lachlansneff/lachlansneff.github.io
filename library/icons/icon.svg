@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Book Ledger">
+  <rect width="192" height="192" fill="#f3efe7" />
+  <rect x="28" y="32" width="60" height="128" fill="#b85f34" />
+  <rect x="94" y="32" width="70" height="128" fill="#1f1b16" />
+  <rect x="40" y="48" width="36" height="6" fill="#f3efe7" />
+  <rect x="106" y="48" width="46" height="6" fill="#f3efe7" />
+  <rect x="40" y="62" width="32" height="6" fill="#f3efe7" />
+  <rect x="106" y="62" width="38" height="6" fill="#f3efe7" />
+  <rect x="40" y="76" width="28" height="6" fill="#f3efe7" />
+  <rect x="106" y="76" width="30" height="6" fill="#f3efe7" />
+</svg>
