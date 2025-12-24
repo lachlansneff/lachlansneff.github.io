@@ -1,4 +1,4 @@
-const cacheName = "book-ledger-v1";
+const cacheName = "book-ledger-v3";
 const assets = [
   "./",
   "./index.html",
@@ -31,14 +31,47 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        const responseClone = response.clone();
-        caches.open(cacheName).then((cache) => cache.put(event.request, responseClone));
-        return response;
-      });
-    })
+  if (event.request.method !== "GET") return;
+
+  const isNavigate =
+    event.request.mode === "navigate" ||
+    event.request.destination === "document";
+  const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+  const isStaticAsset = ["script", "style", "font", "image"].includes(
+    event.request.destination
   );
+
+  if (isNavigate) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches.open(cacheName).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  if (isSameOrigin && isStaticAsset) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          const responseClone = response.clone();
+          caches.open(cacheName).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  event.respondWith(fetch(event.request));
 });

@@ -8,6 +8,7 @@ const searchContainer = document.querySelector(".search");
 const sortSelect = document.getElementById("sort");
 const importBtn = document.getElementById("importBtn");
 const exportBtn = document.getElementById("exportBtn");
+const linkCsvBtn = document.getElementById("linkCsvBtn");
 const fileInput = document.getElementById("fileInput");
 const installBtn = document.getElementById("installBtn");
 const titleInput = document.getElementById("title");
@@ -17,10 +18,15 @@ const isbnInput = document.getElementById("isbn");
 const yearInput = document.getElementById("year");
 const notesInput = document.getElementById("notes");
 const scanBtn = document.getElementById("scanBtn");
+const lookupIsbnBtn = document.getElementById("lookupIsbnBtn");
 const scannerModal = document.getElementById("scannerModal");
 const scannerVideo = document.getElementById("scannerVideo");
 const scannerStatus = document.getElementById("scannerStatus");
 const closeScannerBtn = document.getElementById("closeScanner");
+const isbnPickerModal = document.getElementById("isbnPickerModal");
+const isbnPickerList = document.getElementById("isbnPickerList");
+const isbnPickerEmpty = document.getElementById("isbnPickerEmpty");
+const closeIsbnPickerBtn = document.getElementById("closeIsbnPicker");
 
 let books = loadBooks();
 let deferredPrompt = null;
@@ -28,6 +34,14 @@ let defaultFinishedDate = new Date().toISOString().slice(0, 10);
 let scanControls = null;
 let scanInProgress = false;
 const coverCache = new Map();
+const lookupIsbnBtnLabel = lookupIsbnBtn ? lookupIsbnBtn.textContent : "";
+const linkCsvBtnLabel = linkCsvBtn ? linkCsvBtn.textContent : "";
+const csvDbName = "book-ledger";
+const csvSettingsStore = "settings";
+let csvFileHandle = null;
+let csvAutoSaveEnabled = false;
+let csvWriteInProgress = false;
+let csvWriteQueued = false;
 
 function generateId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
@@ -72,6 +86,7 @@ function loadBooks() {
 
 function saveBooks() {
   localStorage.setItem(storageKey, JSON.stringify(books));
+  queueCsvAutoSave();
 }
 
 function normalize(text) {
@@ -266,7 +281,16 @@ function upsertBook(formData) {
   const editId = bookForm.dataset.editId;
   if (editId) {
     books = books.map((book) =>
-      book.id === editId ? { ...book, ...payload } : book
+      book.id === editId
+        ? {
+            ...book,
+            ...payload,
+            cover:
+              book.isbn && payload.isbn && book.isbn !== payload.isbn
+                ? ""
+                : book.cover,
+          }
+        : book
     );
     delete bookForm.dataset.editId;
   } else {
@@ -407,6 +431,138 @@ async function exportCsvWithPicker(content) {
   await writable.close();
 }
 
+function openSettingsDb() {
+  if (!("indexedDB" in window)) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(csvDbName, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(csvSettingsStore);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getSetting(key) {
+  const db = await openSettingsDb();
+  if (!db) return null;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(csvSettingsStore, "readonly");
+    const store = tx.objectStore(csvSettingsStore);
+    const request = store.get(key);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function setSetting(key, value) {
+  const db = await openSettingsDb();
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(csvSettingsStore, "readwrite");
+    const store = tx.objectStore(csvSettingsStore);
+    store.put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function requestCsvPermission(handle) {
+  if (!handle?.queryPermission) return false;
+  const current = await handle.queryPermission({ mode: "readwrite" });
+  if (current === "granted") return true;
+  const next = await handle.requestPermission({ mode: "readwrite" });
+  return next === "granted";
+}
+
+function updateCsvLinkButton() {
+  if (!linkCsvBtn) return;
+  if (!csvFileHandle) {
+    linkCsvBtn.textContent = linkCsvBtnLabel || "Link CSV";
+    return;
+  }
+  linkCsvBtn.textContent = csvAutoSaveEnabled
+    ? "CSV Auto-save On"
+    : "Enable CSV Auto-save";
+}
+
+async function writeCsvToLinkedFile() {
+  if (!csvFileHandle || !csvAutoSaveEnabled) return;
+  const content = serializeCsv(books);
+  const writable = await csvFileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+function queueCsvAutoSave() {
+  if (!csvFileHandle || !csvAutoSaveEnabled) return;
+  if (csvWriteInProgress) {
+    csvWriteQueued = true;
+    return;
+  }
+  csvWriteInProgress = true;
+  writeCsvToLinkedFile()
+    .catch((error) => {
+      console.warn("Auto-save failed", error);
+    })
+    .finally(() => {
+      csvWriteInProgress = false;
+      if (csvWriteQueued) {
+        csvWriteQueued = false;
+        queueCsvAutoSave();
+      }
+    });
+}
+
+async function linkCsvFile() {
+  if (!("showSaveFilePicker" in window)) {
+    window.alert("CSV auto-save is not supported in this browser.");
+    return;
+  }
+  const handle = await window.showSaveFilePicker({
+    suggestedName: "book-ledger.csv",
+    types: [{ description: "CSV Files", accept: { "text/csv": [".csv"] } }],
+  });
+  const granted = await requestCsvPermission(handle);
+  if (!granted) {
+    window.alert("Permission is required to auto-save the CSV.");
+    return;
+  }
+  csvFileHandle = handle;
+  csvAutoSaveEnabled = true;
+  await setSetting("csvFileHandle", handle);
+  updateCsvLinkButton();
+  queueCsvAutoSave();
+}
+
+async function unlinkCsvFile() {
+  csvFileHandle = null;
+  csvAutoSaveEnabled = false;
+  await setSetting("csvFileHandle", null);
+  updateCsvLinkButton();
+}
+
+async function initCsvAutoSave() {
+  if (!("showSaveFilePicker" in window)) {
+    updateCsvLinkButton();
+    return;
+  }
+  try {
+    const storedHandle = await getSetting("csvFileHandle");
+    if (!storedHandle) {
+      updateCsvLinkButton();
+      return;
+    }
+    const granted = await requestCsvPermission(storedHandle);
+    csvFileHandle = storedHandle;
+    csvAutoSaveEnabled = granted;
+    updateCsvLinkButton();
+  } catch (error) {
+    console.warn("Failed to restore CSV auto-save", error);
+    updateCsvLinkButton();
+  }
+}
+
 function downloadCsv(content) {
   const blob = new Blob([content], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -474,23 +630,38 @@ async function handleExport() {
   }
 }
 
+async function fetchIsbnRecord(isbn) {
+  const response = await fetch(
+    `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(
+      isbn
+    )}&format=json&jscmd=data`
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  const record = data[`ISBN:${isbn}`];
+  if (!record) return null;
+  const title = record.title || "";
+  const authorNames = (record.authors || []).map((author) => author.name);
+  const authorText = authorNames.join(", ");
+  const publishDate = record.publish_date || "";
+  const coverUrl = record.cover?.large || record.cover?.medium || record.cover?.small;
+  const yearMatch = publishDate.match(/\\d{4}/);
+
+  return {
+    title,
+    authorText,
+    year: yearMatch ? yearMatch[0] : "",
+    coverUrl,
+    languages: record.languages || [],
+  };
+}
+
 async function lookupIsbn(isbn) {
   if (!isbn) return;
   try {
-    const response = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(
-        isbn
-      )}&format=json&jscmd=data`
-    );
-    if (!response.ok) return;
-    const data = await response.json();
-    const record = data[`ISBN:${isbn}`];
+    const record = await fetchIsbnRecord(isbn);
     if (!record) return;
-    const title = record.title || "";
-    const authorNames = (record.authors || []).map((author) => author.name);
-    const authorText = authorNames.join(", ");
-    const publishDate = record.publish_date || "";
-    const coverUrl = record.cover?.large || record.cover?.medium || record.cover?.small;
+    const { title, authorText, year, coverUrl } = record;
 
     if (!bookForm.dataset.editId && titleInput.value.trim() === "") {
       titleInput.value = title;
@@ -498,9 +669,8 @@ async function lookupIsbn(isbn) {
     if (!bookForm.dataset.editId && authorInput.value.trim() === "") {
       authorInput.value = authorText;
     }
-    if (!bookForm.dataset.editId && yearInput.value.trim() === "" && publishDate) {
-      const match = publishDate.match(/\\d{4}/);
-      if (match) yearInput.value = match[0];
+    if (!bookForm.dataset.editId && yearInput.value.trim() === "" && year) {
+      yearInput.value = year;
     }
     if (coverUrl && isbn) {
       coverCache.set(isbn, coverUrl);
@@ -508,6 +678,269 @@ async function lookupIsbn(isbn) {
   } catch (error) {
     console.warn("ISBN lookup failed", error);
   }
+}
+
+function pickIsbn(candidates) {
+  if (!Array.isArray(candidates)) return "";
+  const cleaned = candidates
+    .map((candidate) => String(candidate || "").toUpperCase())
+    .map((candidate) => candidate.replace(/[^0-9X]/g, ""))
+    .filter(Boolean);
+  const isbn13 = cleaned.find((candidate) => /^\\d{13}$/.test(candidate));
+  if (isbn13) return isbn13;
+  const isbn10 = cleaned.find((candidate) => /^\\d{9}[0-9X]$/.test(candidate));
+  return isbn10 || cleaned[0] || "";
+}
+
+function rankIsbnCandidates(candidates) {
+  if (!Array.isArray(candidates)) return [];
+  const cleaned = candidates
+    .map((candidate) => String(candidate || "").toUpperCase())
+    .map((candidate) => candidate.replace(/[^0-9X]/g, ""))
+    .filter(Boolean);
+  const isbn13 = cleaned.filter((candidate) => /^\\d{13}$/.test(candidate));
+  const isbn10 = cleaned.filter((candidate) => /^\\d{9}[0-9X]$/.test(candidate));
+  const other = cleaned.filter(
+    (candidate) =>
+      !/^\\d{13}$/.test(candidate) && !/^\\d{9}[0-9X]$/.test(candidate)
+  );
+  return [...isbn13, ...isbn10, ...other];
+}
+
+function getLanguageStatus(record) {
+  const languages = record?.languages;
+  if (!Array.isArray(languages) || languages.length === 0) return "unknown";
+  const hasEnglish = languages.some((lang) => {
+    if (typeof lang === "string") return lang === "eng";
+    if (lang && typeof lang === "object") {
+      const key = lang.key || "";
+      return key.includes("/languages/eng") || key === "eng";
+    }
+    return false;
+  });
+  return hasEnglish ? "english" : "non-english";
+}
+
+async function fetchSearchDocs(params) {
+  const response = await fetch(
+    `https://openlibrary.org/search.json?${params.toString()}`
+  );
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.docs) ? data.docs : [];
+}
+
+async function fetchWorkIsbnCandidates(workKey) {
+  if (!workKey || typeof workKey !== "string") return [];
+  try {
+    const response = await fetch(
+      `https://openlibrary.org${workKey}/editions.json?limit=20`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    const candidates = [];
+    entries.forEach((entry) => {
+      candidates.push(...(entry.isbn_13 || []), ...(entry.isbn_10 || []));
+    });
+    return candidates;
+  } catch (error) {
+    console.warn("Work edition lookup failed", error);
+  }
+  return [];
+}
+
+async function fetchEditionIsbnCandidates(editionKeys) {
+  const keys = Array.isArray(editionKeys) ? editionKeys.slice(0, 4) : [];
+  const candidates = [];
+  for (const key of keys) {
+    try {
+      const response = await fetch(
+        `https://openlibrary.org/api/books?bibkeys=OLID:${encodeURIComponent(
+          key
+        )}&format=json&jscmd=data`
+      );
+      if (!response.ok) continue;
+      const data = await response.json();
+      const record = data[`OLID:${key}`];
+      if (!record) continue;
+      candidates.push(
+        ...(record.isbn_13 || []),
+        ...(record.isbn_10 || []),
+        ...(record.identifiers?.isbn_13 || []),
+        ...(record.identifiers?.isbn_10 || [])
+      );
+    } catch (error) {
+      console.warn("Edition lookup failed", error);
+    }
+  }
+  return candidates;
+}
+
+async function collectIsbnCandidatesBySearch(title, author) {
+  const normalizedTitle = (title || "").trim();
+  const normalizedAuthor = (author || "").trim();
+  if (!normalizedTitle && !normalizedAuthor) return [];
+
+  const params = new URLSearchParams();
+  if (normalizedTitle) params.set("title", normalizedTitle);
+  if (normalizedAuthor) params.set("author", normalizedAuthor);
+  params.set(
+    "fields",
+    "key,isbn,first_publish_year,author_name,edition_key,language"
+  );
+  params.set("limit", "5");
+
+  const collectFromDocs = async (docs, maxTotal) => {
+    const set = new Set();
+    const orderedDocs = [];
+    const englishDocs = [];
+    const otherDocs = [];
+
+    docs.forEach((doc) => {
+      if (Array.isArray(doc.language) && doc.language.includes("eng")) {
+        englishDocs.push(doc);
+      } else {
+        otherDocs.push(doc);
+      }
+    });
+    orderedDocs.push(...englishDocs, ...otherDocs);
+
+    const addCandidates = (candidates, limit) => {
+      const ranked = rankIsbnCandidates(candidates).slice(0, limit);
+      ranked.forEach((isbn) => {
+        if (set.size < maxTotal) set.add(isbn);
+      });
+    };
+
+    for (const doc of orderedDocs) {
+      addCandidates(doc.isbn || [], 4);
+      if (set.size >= maxTotal) break;
+      const workCandidates = await fetchWorkIsbnCandidates(doc.key);
+      addCandidates(workCandidates, 4);
+      if (set.size >= maxTotal) break;
+      const editionCandidates = await fetchEditionIsbnCandidates(doc.edition_key);
+      addCandidates(editionCandidates, 3);
+      if (set.size >= maxTotal) break;
+    }
+
+    return Array.from(set);
+  };
+
+  params.set("language", "eng");
+  const englishDocs = await fetchSearchDocs(params);
+  const englishCandidates = await collectFromDocs(englishDocs, 10);
+  if (englishCandidates.length) return englishCandidates;
+
+  params.delete("language");
+  const fallbackDocs = await fetchSearchDocs(params);
+  return collectFromDocs(fallbackDocs, 10);
+}
+
+async function lookupIsbnByMetadata() {
+  return collectIsbnCandidatesBySearch(
+    titleInput.value,
+    authorInput.value
+  );
+}
+
+function renderIsbnPickerList(items) {
+  isbnPickerList.innerHTML = "";
+  isbnPickerEmpty.hidden = items.length !== 0;
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "isbn-option";
+
+    const img = document.createElement("img");
+    img.alt = item.title ? `Cover for ${item.title}` : "Book cover";
+    img.loading = "lazy";
+    img.src = getOpenLibraryCoverUrl(item.isbn);
+    img.onerror = () => {
+      img.src = placeholderCover();
+    };
+
+    const text = document.createElement("div");
+    const title = document.createElement("p");
+    title.className = "isbn-option-title";
+    title.textContent = item.title || "Unknown title";
+
+    const meta = document.createElement("p");
+    meta.className = "isbn-option-meta";
+    const parts = [
+      item.authorText ? `by ${item.authorText}` : "",
+      item.isbn ? `ISBN ${item.isbn}` : "",
+      item.languageLabel || "",
+    ];
+    meta.textContent = parts.filter(Boolean).join(" · ");
+
+    text.append(title, meta);
+    button.append(img, text);
+    button.addEventListener("click", () => {
+      isbnInput.value = item.isbn;
+      if (isbnPickerModal.open) isbnPickerModal.close();
+      lookupIsbn(item.isbn);
+    });
+
+    isbnPickerList.append(button);
+  });
+}
+
+async function openIsbnPicker(candidates) {
+  isbnPickerEmpty.hidden = true;
+  isbnPickerList.innerHTML = "";
+  if (!isbnPickerModal.open) isbnPickerModal.showModal();
+  if (!candidates.length) {
+    isbnPickerEmpty.hidden = false;
+    return;
+  }
+
+  const records = await Promise.all(
+    candidates.map(async (isbn) => {
+      const record = await fetchIsbnRecord(isbn);
+      return { isbn, record };
+    })
+  );
+
+  const normalizedTitle = normalize(titleInput.value);
+  const normalizedAuthor = normalize(authorInput.value);
+  const items = records.map(({ isbn, record }) => {
+    const status = record ? getLanguageStatus(record) : "unknown";
+    const languageLabel =
+      status === "english"
+        ? "English"
+        : status === "non-english"
+          ? "Other language"
+          : "Language unknown";
+    return {
+      isbn,
+      title: record?.title || "",
+      authorText: record?.authorText || "",
+      languageLabel,
+      score:
+        (status === "english" ? 0 : status === "unknown" ? 1 : 2) +
+        (record?.title && normalize(record.title).includes(normalizedTitle)
+          ? -0.5
+          : 0) +
+        (record?.authorText &&
+        normalize(record.authorText).includes(normalizedAuthor)
+          ? -0.25
+          : 0),
+    };
+  });
+
+  items.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    return a.isbn.localeCompare(b.isbn);
+  });
+
+  renderIsbnPickerList(items);
+}
+
+function setLookupButtonState(isLoading, label) {
+  if (!lookupIsbnBtn) return;
+  lookupIsbnBtn.disabled = isLoading;
+  lookupIsbnBtn.textContent = label || lookupIsbnBtnLabel;
 }
 
 function setScannerStatus(message) {
@@ -591,6 +1024,69 @@ closeScannerBtn.addEventListener("click", stopScanner);
 scannerModal.addEventListener("close", () => {
   if (scanInProgress) stopScanner();
 });
+closeIsbnPickerBtn.addEventListener("click", () => {
+  if (isbnPickerModal.open) isbnPickerModal.close();
+});
+isbnPickerModal.addEventListener("close", () => {
+  isbnPickerList.innerHTML = "";
+  isbnPickerEmpty.hidden = true;
+});
+if (linkCsvBtn) {
+  linkCsvBtn.addEventListener("click", async () => {
+    if (csvFileHandle && csvAutoSaveEnabled) {
+      const shouldUnlink = window.confirm(
+        "Stop auto-saving to the linked CSV file?"
+      );
+      if (shouldUnlink) await unlinkCsvFile();
+      return;
+    }
+    if (csvFileHandle && !csvAutoSaveEnabled) {
+      const granted = await requestCsvPermission(csvFileHandle);
+      csvAutoSaveEnabled = granted;
+      updateCsvLinkButton();
+      if (!granted) {
+        window.alert("Permission is required to auto-save the CSV.");
+        return;
+      }
+      queueCsvAutoSave();
+      return;
+    }
+    try {
+      await linkCsvFile();
+    } catch (error) {
+      console.warn("CSV linking cancelled or failed", error);
+    }
+  });
+}
+lookupIsbnBtn.addEventListener("click", async () => {
+  const isbn = isbnInput.value.trim();
+  if (isbn) {
+    lookupIsbn(isbn);
+    return;
+  }
+
+  const title = titleInput.value.trim();
+  const author = authorInput.value.trim();
+  if (!title && !author) {
+    window.alert("Add a title or author to search for an ISBN.");
+    return;
+  }
+
+  setLookupButtonState(true, "Searching...");
+  try {
+    const candidates = await lookupIsbnByMetadata();
+    if (!candidates.length) {
+      window.alert("No ISBN found for that search.");
+      return;
+    }
+    await openIsbnPicker(candidates);
+  } catch (error) {
+    console.warn("Title search failed", error);
+    window.alert("ISBN search failed.");
+  } finally {
+    setLookupButtonState(false);
+  }
+});
 
 importBtn.addEventListener("click", handleImport);
 exportBtn.addEventListener("click", handleExport);
@@ -602,3 +1098,4 @@ isbnInput.addEventListener("change", (event) => {
 renderBooks();
 finishedInput.value = defaultFinishedDate;
 setInterval(updateDefaultFinishedDate, 60 * 1000);
+initCsvAutoSave();

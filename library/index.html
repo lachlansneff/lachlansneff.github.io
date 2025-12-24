@@ -20,6 +20,7 @@
       </div>
       <div class="actions">
         <button id="installBtn" class="ghost" hidden>Install App</button>
+        <button id="linkCsvBtn" class="ghost">Link CSV</button>
         <button id="importBtn" class="ghost">Import CSV</button>
         <button id="exportBtn" class="ghost">Export CSV</button>
         <input id="fileInput" type="file" accept=".csv" hidden />
@@ -59,6 +60,7 @@
           <div class="form-actions">
             <button type="submit" class="primary">Save</button>
             <button type="button" id="scanBtn" class="ghost">Scan Barcode</button>
+            <button type="button" id="lookupIsbnBtn" class="ghost">Find ISBN</button>
             <button type="reset" class="ghost">Clear</button>
           </div>
         </form>
@@ -109,6 +111,22 @@
           <div class="scanner-reticle"></div>
         </div>
         <p id="scannerStatus" class="scanner-status">Starting camera...</p>
+      </div>
+    </dialog>
+
+    <dialog id="isbnPickerModal" class="isbn-picker-modal">
+      <div class="isbn-picker-card">
+        <div class="scanner-header">
+          <div>
+            <h2>Select an ISBN</h2>
+            <p>Pick the edition you want to add.</p>
+          </div>
+          <button id="closeIsbnPicker" class="ghost">Close</button>
+        </div>
+        <div id="isbnPickerList" class="isbn-picker-list"></div>
+        <p id="isbnPickerEmpty" class="isbn-picker-empty">
+          No ISBNs found for that search.
+        </p>
       </div>
     </dialog>
 
