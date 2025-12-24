@@ -27,6 +27,7 @@ const isbnPickerModal = document.getElementById("isbnPickerModal");
 const isbnPickerList = document.getElementById("isbnPickerList");
 const isbnPickerEmpty = document.getElementById("isbnPickerEmpty");
 const closeIsbnPickerBtn = document.getElementById("closeIsbnPicker");
+const refreshBtn = document.getElementById("refreshBtn");
 
 let books = loadBooks();
 let deferredPrompt = null;
@@ -42,6 +43,7 @@ let csvFileHandle = null;
 let csvAutoSaveEnabled = false;
 let csvWriteInProgress = false;
 let csvWriteQueued = false;
+let refreshInProgress = false;
 
 function generateId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
@@ -967,6 +969,40 @@ function stopScanner() {
   if (scannerModal.open) scannerModal.close();
 }
 
+function setRefreshButtonState(isRefreshing) {
+  if (!refreshBtn) return;
+  refreshBtn.disabled = isRefreshing;
+  refreshBtn.textContent = isRefreshing ? "Refreshing..." : "Refresh App";
+}
+
+async function forceAppRefresh() {
+  if (refreshInProgress) return;
+  refreshInProgress = true;
+  setRefreshButtonState(true);
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.update();
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          return;
+        }
+        if (registration.installing) {
+          registration.installing.addEventListener("statechange", () => {
+            if (registration.waiting) {
+              registration.waiting.postMessage({ type: "SKIP_WAITING" });
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Refresh failed", error);
+    }
+  }
+  window.location.reload();
+}
+
 async function startScanner() {
   if (scanInProgress) return;
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -1024,6 +1060,11 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("service-worker.js");
   });
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshInProgress) {
+      window.location.reload();
+    }
+  });
 }
 
 scanBtn.addEventListener("click", startScanner);
@@ -1038,6 +1079,9 @@ isbnPickerModal.addEventListener("close", () => {
   isbnPickerList.innerHTML = "";
   isbnPickerEmpty.hidden = true;
 });
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", forceAppRefresh);
+}
 if (linkCsvBtn) {
   linkCsvBtn.addEventListener("click", async () => {
     if (csvFileHandle && csvAutoSaveEnabled) {

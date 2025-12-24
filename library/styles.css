@@ -308,6 +308,16 @@ label.wide {
   font-size: 0.9rem;
 }
 
+.refresh-bar {
+  padding: 0 0 2.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.refresh-bar button {
+  font-size: 0.9rem;
+}
+
 .scanner-modal {
   border: none;
   padding: 0;

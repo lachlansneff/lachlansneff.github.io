@@ -1,4 +1,4 @@
-const cacheName = "book-ledger-v4";
+const cacheName = "book-ledger-v5";
 const assets = [
   "./",
   "./index.html",
@@ -74,4 +74,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(fetch(event.request));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
