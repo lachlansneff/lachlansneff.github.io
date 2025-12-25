@@ -665,7 +665,7 @@ async function fetchIsbnRecord(isbn) {
   };
 }
 
-async function lookupIsbn(isbn) {
+async function lookupIsbn(isbn, options = {}) {
   if (!isbn) return;
   try {
     const record = await fetchIsbnRecord(isbn);
@@ -675,10 +675,18 @@ async function lookupIsbn(isbn) {
     if (!bookForm.dataset.editId && titleInput.value.trim() === "") {
       titleInput.value = title;
     }
-    if (!bookForm.dataset.editId && authorInput.value.trim() === "") {
+    if (
+      authorText &&
+      (options.forceAuthor ||
+        (!bookForm.dataset.editId && authorInput.value.trim() === ""))
+    ) {
       authorInput.value = authorText;
     }
-    if (!bookForm.dataset.editId && yearInput.value.trim() === "" && year) {
+    if (
+      year &&
+      (options.forceYear ||
+        (!bookForm.dataset.editId && yearInput.value.trim() === ""))
+    ) {
       yearInput.value = year;
     }
     if (coverUrl && isbn) {
@@ -1027,7 +1035,7 @@ async function startScanner() {
           isbnInput.value = text;
           setScannerStatus(`Detected ${text}`);
           stopScanner();
-          lookupIsbn(text);
+          lookupIsbn(text, { forceAuthor: true, forceYear: true });
         } else if (error && error.name !== "NotFoundException") {
           setScannerStatus("Scanning...");
         } else {
